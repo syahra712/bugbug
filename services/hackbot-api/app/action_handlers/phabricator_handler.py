@@ -1,10 +1,11 @@
 """Apply-side Phabricator actions: submit an already-built diff payload.
 
-``SubmitPatchHandler`` creates a revision and ``UpdatePatchHandler`` adds a diff
-to an existing one — one handler per recorded action type, so neither carries
-the other's conditionals. What they share (loading the diff artifact, the
-``creatediff`` call, the transactions common to both edits) lives in the
-module-level helpers above them.
+``SubmitPatchHandler`` creates a revision, ``UpdatePatchHandler`` adds a diff
+to an existing one, and ``EditRevisionHandler`` rewrites an existing one's
+title/summary/test plan (its commit message) — one handler per recorded action
+type, so none carries another's conditionals. What they share (loading the diff
+artifact, the ``creatediff`` call, the transactions common to both edits) lives
+in the module-level helpers above them.
 
 Pairs with the recording side in ``actions/phabricator.py`` and the payload
 built agent-side in ``hackbot_runtime.changes.build_phabricator_diff`` (while
@@ -369,3 +370,41 @@ class UpdatePatchHandler:
             return ActionResult.failed(str(exc))
 
         return ActionResult.ok()
+
+
+class EditRevisionHandler:
+    """Applies ``phabricator.edit_revision``: new title/summary/test plan.
+
+    Only the fields the agent passed are edited; the diff, bug id, and review
+    status stay as they are. The commit message Lando lands (and ``moz-phab
+    patch`` rebuilds) comes from these revision fields, so editing them is how
+    the commit message changes.
+    """
+
+    async def apply(self, params: dict[str, Any], ctx: ApplyContext) -> ActionResult:
+        revision_id = params["revision_id"]
+
+        transactions: list[dict[str, Any]] = []
+        if params.get("title") is not None:
+            transactions.append(
+                {"type": "title", "value": _revision_title(params["title"])}
+            )
+        if params.get("summary") is not None:
+            transactions.append({"type": "summary", "value": params["summary"]})
+        if params.get("test_plan") is not None:
+            transactions.append({"type": "testPlan", "value": params["test_plan"]})
+        if not transactions:
+            return ActionResult.failed("No revision fields to edit")
+
+        try:
+            await _conduit_request(
+                "differential.revision.edit",
+                objectIdentifier=revision_id,
+                transactions=transactions,
+            )
+        except Exception as exc:
+            log.exception("Failed to edit revision D%s", revision_id)
+            return ActionResult.failed(str(exc))
+        return ActionResult.ok(
+            {"revision_id": revision_id, "revision_url": _revision_url(revision_id)}
+        )

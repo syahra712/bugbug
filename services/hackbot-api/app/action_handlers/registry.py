@@ -10,6 +10,7 @@ from app.action_handlers.phabricator_handler import (
     AddCommentHandler as PhabricatorAddCommentHandler,
 )
 from app.action_handlers.phabricator_handler import (
+    EditRevisionHandler,
     SubmitPatchHandler,
     UpdatePatchHandler,
 )
@@ -30,6 +31,7 @@ HANDLERS: dict[str, ActionHandler] = {
     "bugzilla.create_bug": CreateBugHandler(),
     "phabricator.submit_patch": SubmitPatchHandler(),
     "phabricator.update_patch": UpdatePatchHandler(),
+    "phabricator.edit_revision": EditRevisionHandler(),
     "phabricator.add_comment": PhabricatorAddCommentHandler(),
     "testrail.submit_test_plan": SubmitTestPlanHandler(),
     "slack.post_message": PostMessageHandler(),

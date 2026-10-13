@@ -32,7 +32,7 @@ _PHABRICATOR_TEST_PLAN_HEADER_RE = re.compile(
 )
 
 
-def _validate_summary(summary: str | None) -> None:
+def _validate_summary(summary: str | None, tool_name: str) -> None:
     if not summary:
         return
 
@@ -41,7 +41,7 @@ def _validate_summary(summary: str | None) -> None:
         raise ToolError(
             f'Invalid Phabricator summary: "{match.group()}" at the beginning of '
             "a line belongs in the Test Plan field. Move the verification details "
-            "to the test_plan argument and call submit_patch again."
+            f"to the test_plan argument and call {tool_name} again."
         )
 
 
@@ -116,7 +116,7 @@ async def submit_patch(
     in the same run, written as `{{actions.<ref>.url}}` (for example, inside a
     bug comment).
     """
-    _validate_summary(summary)
+    _validate_summary(summary, "submit_patch")
     params: dict = {
         "bug_id": bug_id,
         "title": title,
@@ -161,13 +161,91 @@ async def update_patch(
     a proposed action for review; it is not sent to Phabricator during the run.
 
     Only the diff changes: the revision keeps its title, summary, and bug
-    association exactly as they are.
+    association exactly as they are. To change those, use ``edit_revision``.
     """
     action = recorder.record(
         "phabricator.update_patch",
         {"revision_id": revision_id},
         reasoning=reasoning,
     )
+    return confirmation(action)
+
+
+@tool
+async def edit_revision(
+    recorder: ActionsRecorder,
+    revision_id: Annotated[
+        int,
+        Field(
+            description=(
+                "The existing Phabricator revision to edit, as a number (12345 "
+                "for D12345). Only pass a revision id you were given or read "
+                "from the bug: never guess one."
+            )
+        ),
+    ],
+    reasoning: Annotated[
+        str, Field(description="Why you are editing this revision (for audit log).")
+    ],
+    title: Annotated[
+        str | None,
+        Field(
+            description=(
+                "New title: the commit message subject line. Do not include "
+                "reviewer annotations (r=... or r?...). Omit to keep the "
+                "current title."
+            )
+        ),
+    ] = None,
+    summary: Annotated[
+        str | None,
+        Field(
+            description=(
+                "New summary: the commit message body. Replaces the current "
+                "summary entirely, so pass the full text. Keep test and "
+                "verification details in test_plan instead. Omit to keep the "
+                "current summary."
+            )
+        ),
+    ] = None,
+    test_plan: Annotated[
+        str | None,
+        Field(
+            description=(
+                "New test plan. Replaces the current one entirely. Omit to keep "
+                "the current test plan."
+            )
+        ),
+    ] = None,
+) -> str:
+    """Change an existing revision's title, summary, or test plan.
+
+    The title and summary are the patch's commit message, so use this when you
+    are asked to reword the commit message or the revision description. It does
+    not touch the code: to change the code too, also call ``update_patch``,
+    after this, so the new diff's commit information carries the new message.
+
+    Pass only the fields you are changing. Read the revision first, so a
+    summary you rewrite keeps whatever it should still say. Calling this
+    records the edit as a proposed action for review; it is not sent to
+    Phabricator during the run.
+    """
+    if title is None and summary is None and test_plan is None:
+        raise ToolError(
+            "Nothing to edit: pass at least one of title, summary, or test_plan."
+        )
+    if title is not None and not title.strip():
+        raise ToolError("The title cannot be empty: omit it to keep the current one.")
+    _validate_summary(summary, "edit_revision")
+
+    params: dict = {"revision_id": revision_id}
+    if title is not None:
+        params["title"] = title
+    if summary is not None:
+        params["summary"] = summary
+    if test_plan is not None:
+        params["test_plan"] = test_plan
+    action = recorder.record("phabricator.edit_revision", params, reasoning=reasoning)
     return confirmation(action)
 
 

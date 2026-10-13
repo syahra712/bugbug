@@ -26,6 +26,7 @@ BUG_FIX_ACTIONS = [
     "try_server.push",
     "phabricator.submit_patch",
     "phabricator.update_patch",
+    "phabricator.edit_revision",
     "phabricator.add_comment",
 ]
 

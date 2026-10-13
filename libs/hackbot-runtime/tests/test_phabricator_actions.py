@@ -1,4 +1,4 @@
-"""Tests for the phabricator recording tools (submit/update patch, comment)."""
+"""Tests for the phabricator recording tools (patches, revision edits, comments)."""
 
 import pytest
 from agent_tools.registry import ToolError
@@ -148,3 +148,43 @@ async def test_add_comment_records_revision_and_text():
     assert action["type"] == "phabricator.add_comment"
     assert action["params"]["revision_id"] == 42
     assert action["params"]["text"].startswith("Here is the answer.")
+
+
+async def test_edit_revision_records_only_the_given_fields():
+    rec = ActionsRecorder()
+    await phabricator.edit_revision(
+        rec, revision_id=42, title="Bug 1 - Better title", reasoning="r"
+    )
+    action = rec.actions[0]
+    assert action["type"] == "phabricator.edit_revision"
+    assert action["params"] == {"revision_id": 42, "title": "Bug 1 - Better title"}
+
+
+async def test_edit_revision_records_an_empty_summary():
+    rec = ActionsRecorder()
+    await phabricator.edit_revision(rec, revision_id=42, summary="", reasoning="r")
+    assert rec.actions[0]["params"] == {"revision_id": 42, "summary": ""}
+
+
+async def test_edit_revision_requires_a_field():
+    rec = ActionsRecorder()
+    with pytest.raises(ToolError):
+        await phabricator.edit_revision(rec, revision_id=42, reasoning="r")
+    assert rec.actions == []
+
+
+async def test_edit_revision_rejects_an_empty_title():
+    rec = ActionsRecorder()
+    with pytest.raises(ToolError):
+        await phabricator.edit_revision(rec, revision_id=42, title=" ", reasoning="r")
+    assert rec.actions == []
+
+
+async def test_edit_revision_rejects_test_plan_headers():
+    rec = ActionsRecorder()
+    with pytest.raises(ToolError) as exc:
+        await phabricator.edit_revision(
+            rec, revision_id=42, summary="Why\n\nTests: ran them", reasoning="r"
+        )
+    assert "call edit_revision again" in str(exc.value)
+    assert rec.actions == []

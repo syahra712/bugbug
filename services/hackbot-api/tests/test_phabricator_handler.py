@@ -505,6 +505,47 @@ async def test_add_comment_conduit_error_fails(monkeypatch):
     assert "ERR-CONDUIT-CORE" in result.error
 
 
+async def test_edit_revision_edits_only_the_given_fields(monkeypatch):
+    fake, calls = _fake_conduit({})
+    monkeypatch.setattr(phabricator_handler, "_conduit_request", fake)
+
+    result = await phabricator_handler.EditRevisionHandler().apply(
+        {"revision_id": 42, "title": "WIP: Bug 1 - New title", "summary": ""},
+        _ctx(),
+    )
+
+    assert result.status == "applied"
+    assert result.result == {
+        "revision_id": 42,
+        "revision_url": "https://phabricator.services.mozilla.com/D42",
+    }
+    assert calls == [
+        (
+            "differential.revision.edit",
+            {
+                "objectIdentifier": 42,
+                "transactions": [
+                    {"type": "title", "value": "Bug 1 - New title"},
+                    {"type": "summary", "value": ""},
+                ],
+            },
+        )
+    ]
+
+
+async def test_edit_revision_conduit_error_fails(monkeypatch):
+    async def fake(method, **payload):
+        raise RuntimeError("Conduit error ERR-CONDUIT-CORE: bad request")
+
+    monkeypatch.setattr(phabricator_handler, "_conduit_request", fake)
+
+    result = await phabricator_handler.EditRevisionHandler().apply(
+        {"revision_id": 42, "test_plan": "ran it"}, _ctx()
+    )
+    assert result.status == "failed"
+    assert "ERR-CONDUIT-CORE" in result.error
+
+
 async def test_repository_phid_prefers_env_var(monkeypatch):
     monkeypatch.setenv("PHABRICATOR_REPOSITORY_PHID", "PHID-FROM-ENV")
     assert await phabricator_handler._repository_phid() == "PHID-FROM-ENV"
